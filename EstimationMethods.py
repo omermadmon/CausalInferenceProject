@@ -132,7 +132,7 @@ def T_learner(X_text_dict, X_user_description_dict, X_user_covariates_dict, T_di
 
 
 def X_learner(X_text_dict, X_user_description_dict, X_user_covariates_dict, T_dict, Y_dict,
-              t1, t2, f_0, f_1, tau_hat_0, tau_hat_1, g, test_portion=0.1, random_state=42, print_progress=True):
+              t1, t2, f_0, f_1, tau_hat_0, tau_hat_1, test_portion=0.1, random_state=42, print_progress=True):
     # ------------------------- PHASE 0: PREPARE DATA -------------------------
     if print_progress: print('PREPARE DATA')
     # Collect all domain datasets
@@ -186,23 +186,41 @@ def X_learner(X_text_dict, X_user_description_dict, X_user_covariates_dict, T_di
     # validate fitted models on test set
     Y0_train_pred = f_0.predict(X0_train)
     Y0_test_pred = f_0.predict(X0_test)
-    train_mse_0 = mean_squared_error(Y0_train, Y0_train_pred)
-    test_mse_0 = mean_squared_error(Y0_test, Y0_test_pred)
+    train_mse_f0 = mean_squared_error(Y0_train, Y0_train_pred)
+    test_mse_f0 = mean_squared_error(Y0_test, Y0_test_pred)
 
     Y1_train_pred = f_1.predict(X1_train)
     Y1_test_pred = f_1.predict(X1_test)
-    train_mse_1 = mean_squared_error(Y1_train, Y1_train_pred)
-    test_mse_1 = mean_squared_error(Y1_test, Y1_test_pred)
+    train_mse_f1 = mean_squared_error(Y1_train, Y1_train_pred)
+    test_mse_f1 = mean_squared_error(Y1_test, Y1_test_pred)
 
     # ------------------------- PHASE 2: GENERATE PSEUDO CATE LABELS -------------------------
     if print_progress: print('GENERATE PSEUDO CATE LABELS')
-    tau_1 = Y1[:,0] - f_0.predict(X1)
-    tau_0 = f_1.predict(X0) - Y0[:,0]
+    tau_1 = Y1[:, 0] - f_0.predict(X1)
+    tau_0 = f_1.predict(X0) - Y0[:, 0]
 
-    # ------------------------- PHASE 3: TRAIN CATE MODELS -------------------------
+    # ------------------------- PHASE 3: TRAIN AND EVALUATE CATE MODELS -------------------------
     if print_progress: print('TRAIN CATE MODELS')
-    tau_hat_0.fit(X0, tau_0)
-    tau_hat_1.fit(X1, tau_1)
-    # cate_model = lambda x: g(x) * tau_hat_0(x) + (1 - g(x)) * tau_hat_1(x)
 
-    return tau_hat_0, tau_hat_1, f_0, f_1, train_mse_0, test_mse_0, train_mse_1, test_mse_1
+    # split to train and test
+    X0_train, X0_test, tau_0_train, tau_0_test = train_test_split(X0, tau_0, test_size=test_portion, random_state=random_state)
+    X1_train, X1_test, tau_1_train, tau_1_test = train_test_split(X1, tau_1, test_size=test_portion, random_state=random_state)
+
+    # train CATE model
+    tau_hat_0.fit(X0_train, tau_0_train)
+    tau_hat_1.fit(X1_train, tau_1_train)
+
+    # evaluate CATE model
+    tau_0_train_pred = tau_hat_0.predict(X0_train)
+    tau_0_test_pred = tau_hat_0.predict(X0_test)
+    train_mse_tau_hat_0 = mean_squared_error(tau_0_train, tau_0_train_pred)
+    test_mse_tau_hat_0 = mean_squared_error(tau_0_test, tau_0_test_pred)
+
+    tau_1_train_pred = tau_hat_1.predict(X1_train)
+    tau_1_test_pred = tau_hat_1.predict(X1_test)
+    train_mse_tau_hat_1 = mean_squared_error(tau_1_train, tau_1_train_pred)
+    test_mse_tau_hat_1 = mean_squared_error(tau_1_test, tau_1_test_pred)
+
+    return tau_hat_0, tau_hat_1, f_0, f_1, \
+           train_mse_f0, test_mse_f0, train_mse_f1, test_mse_f1, \
+           train_mse_tau_hat_0, test_mse_tau_hat_0, train_mse_tau_hat_1, test_mse_tau_hat_1
